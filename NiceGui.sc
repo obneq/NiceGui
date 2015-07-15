@@ -36,8 +36,8 @@ NiceGui {
 		}, {
 			"new file!".postln;
 			fileDict = Dictionary[
-				\controls -> Dictionary[],
-				\presets  -> Dictionary[] ];
+				\controls -> Dictionary.new,
+				\presets  -> Dictionary.new ];
 
 			state = true;
 		});
@@ -47,9 +47,8 @@ NiceGui {
 
 		SynthDef(name, def).add.postln;
 
-		guiElems = Dictionary[];
-		currentPresetDict = Dictionary[];
-
+		guiElems = Dictionary.new;
+		currentPresetDict = Dictionary.new;
 		playingNotes = Dictionary.new;
 		group = Group.new;
 
@@ -57,15 +56,14 @@ NiceGui {
 	}
 
 	addControl {
-		arg name="name", ctr;
-		var knob, view=View(buttons, 40@60).background_(Color.rand);
-		ctr=controls[name];
+		| name |
+		var knob, view = View(buttons, 40@60).background_(Color.rand);
 
 		view.name_(name);
 		view.layout_(
 			VLayout(
 				StaticText().string_(name),
-				knob=Knob()
+				knob = Knob()
 				.action_({ |k|
 					currentPresetDict[name] = k.value;
 					currentPreset = currentPresetDict.asKeyValuePairs;
@@ -80,39 +78,42 @@ NiceGui {
 		knob.addAction({ false }, \keyDownAction);
 		guiElems[name] = knob;
 
-		view.moveTo( ctr.at(\posX), ctr.at(\posY));
-		view.addAction({ arg v, x, y, m;
+		view.moveTo( *controls[name][\pos] );
+		view.addAction({
+			| v, x, y, m |
+
 			if(state, {
 				var newPos;
+
 				newPos = v.absoluteBounds - v.parent.absoluteBounds;
-				newPos = ( newPos.leftTop + Point(x, y) ).div(5) * 5;
+				newPos = (newPos.leftTop.asArray + [x, y]).div(5) * 5;
 
-				controls[v.name.asSymbol].putPairs(
-					[\posX, newPos.x,\posY, newPos.y]);
-
-				view.moveTo(newPos.x, newPos.y);
+				controls[name].put(\pos, newPos);
+				view.moveTo(*newPos);
 			});
 		}, \mouseMoveAction);
 	}
 
 	uniGui {
 		buttons = View();
-		synthdef.argNames.do({ arg name, i;
+		synthdef.argNames.do({
+			| name |
+
 			switch( name,
 				// args without controls
 				\out, {}, \gate, {}, \note, {}, \freq, {},
+				// new default control
 				{
-					if(controls[ name ].isNil, {
-						controls[ name ] = [
-						\type, \knob,
-							\name, name,
-						\posX, 0,
-						\posY, 0,
-						\spec, [0, 1, 0.2] ].asDict;
+					if(controls[name].isNil, {
+						controls[name] = (
+							type: \knob,
+							name: name,
+							pos:  [0, 0],
+							spec: [0, 1, 0.2] );
 					});
 
 					currentPresetDict[name] = 0.2;
-					this.addControl( name );
+					this.addControl(name);
 			})
 		});
 		currentPreset = currentPresetDict.asKeyValuePairs;
@@ -142,8 +143,7 @@ NiceGui {
 
 	setState {
 		state = not(state);
-		//guiElems.do({ |e| e.state_(state) });
-		this.saveGui;
+		if( not(state), { this.saveGui });
 	}
 
 	newPreset {

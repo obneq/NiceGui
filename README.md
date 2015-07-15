@@ -18,3 +18,8 @@ example usage:
 
     NiceGui.new(\testdef, synthdef).gui;
     )
+
+this will create a new file named testdef.scd in the folder specified
+in the class file. You need to set this up properly to an existing folder
+to use NiceGui. It will also open up a window with GUI elements for each
+argument of your synthdef which you can edit visually.

@@ -15,6 +15,10 @@ NiceGui {
 
 	var modal;
 
+	// TODO: fix messy use of control name as string/symbol
+	// TODO: fix and improve handling of control specs
+	// TODO: deal with autorepeat keys
+
 	*new {
 		|name, synthdef, server|
 		^super.new.init(name, synthdef, server);

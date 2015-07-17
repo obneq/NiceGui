@@ -13,6 +13,8 @@ NiceGui {
 	var <>state=false; // true means edit gui!
 	var synthname, synthdef, w;
 
+	var modal;
+
 	*new {
 		|name, synthdef, server|
 		^super.new.init(name, synthdef, server);
@@ -35,9 +37,9 @@ NiceGui {
 			f.close;
 		}, {
 			"new file!".postln;
-			fileDict = Dictionary[
-				\controls -> Dictionary.new,
-				\presets  -> Dictionary.new ];
+			fileDict = (
+				controls: Dictionary.new,
+				presets:  Dictionary.new );
 
 			state = true;
 		});
@@ -55,43 +57,142 @@ NiceGui {
 		this.uniGui;
 	}
 
+	dragControlView {
+		| v, x, y |
+
+		if(state, {
+			var newPos;
+
+			newPos = v.absoluteBounds - v.parent.absoluteBounds;
+			newPos = (newPos.leftTop.asArray + [x, y]).div(5) * 5;
+
+			controls[v.name.asSymbol].put(\pos, newPos);
+			v.moveTo(*newPos);
+		});
+	}
+
+	editControlView {
+		| v, x, y, m, mb |
+		var label, spec, p;
+
+		if(mb != 1 || state.not, {^false});
+		p = v.mapToGlobal(x@y);
+		p.y = Window.screenBounds.height-p.y;
+
+		if( modal.isNil, {
+			modal = Window( "new preset name...", Rect(p.x, p.y, 200, 200), border:false )
+			.onClose_({modal=nil})
+			.alwaysOnTop_( true );
+
+			View(modal, 200@60)
+			.layout_(VLayout(
+				StaticText(modal).string_("label"),
+				label = TextField(w)
+				.string_( controls[v.name.asSymbol][\label] ?? " ")
+				.action_({ |p| this.edit(v, p, \label)})
+			));
+			View(modal, Rect(0, 50, 200, 60))
+			.layout_(VLayout(
+				StaticText(modal).string_("spec"),
+				spec = TextField(modal)
+				.string_( controls[v.name.asSymbol][\spec].asString ?? " ")
+				.action_({ |p| p.postln; this.editSpec(v, p)})
+			));
+			View(modal, Rect(0, 100, 200, 60))
+			.layout_(VLayout(
+				StaticText(modal).string_("type"),
+				PopUpMenu(modal).items_([ "knob", "vslider", "hslider", "button", "popup" ])
+				.value_( controls[v.name.asSymbol][\type])
+				.action_({ |p| this.edit(v, p, \type)})
+			));
+			Button( modal, Rect( 5, 175, 50, 14 ) )
+			.action_({
+				modal.close; modal=nil;
+				label.doAction;
+				spec.doAction;
+				this.updateControl(v)})
+			.states_([[ "Ok", Color.black, Color.clear]])
+			.font_( Font("Helvetica",9));
+			Button( modal, Rect( 60, 175, 50, 14 ) )
+			.action_({ modal.close; modal=nil })
+			.states_([[ "Cancel", Color.black, Color.clear]])
+			.font_( Font("Helvetica",9));
+			modal.front;
+		})
+	}
+
+	edit {
+		|v, p, sym|
+		var name = v.name.asSymbol;
+
+		controls[name][sym] = p.value;
+	}
+
+	editSpec {
+		|v, p|
+		var name = v.name.asSymbol;
+		var spec = p.value;
+
+		if(spec.value.isString, {spec = spec.value.interpret});
+		controls[name][\spec] = spec;
+	}
+
 	addControl {
 		| name |
-		var knob, view = View(buttons, 40@60).background_(Color.rand);
+		var knob, cclass, view = View(buttons).background_(Color.rand);
+
+		// slider documentation says it will be horiz/vert automatically
+		// depending on view size, but this does not work, so its explicit
+		var horiz = false;
+
+		switch( controls[name][\type],
+			0, {view.bounds_(40@60);  cclass = Knob},
+			1, {view.bounds_(40@190); cclass = Slider},
+			2, {view.bounds_(175@60); cclass = Slider; horiz = true;},
+			3, {view.bounds_(40@60);  cclass = Button},
+			{view.bounds_(40@60); cclass=Knob});
 
 		view.name_(name);
 		view.layout_(
 			VLayout(
-				StaticText().string_(name),
-				knob = Knob()
+				StaticText().string_(controls[name][\label].asString),
+				knob = cclass.new
 				.action_({ |k|
+					var spec;
+
+					// TODO: fix specs
+					spec = controls[name][\spec].asSpec;
+
 					currentPresetDict[name] = k.value;
 					currentPreset = currentPresetDict.asKeyValuePairs;
-					group.set( name, k.value );
+					group.set( name, spec.map(k.value) );
 				})
 				.value_(currentPresetDict[name]);
+				if(horiz, { knob.orientation_(\horizontal)});
+				knob
 			);
 		);
 
+		// don't click or move controls when editing gui
 		knob.addAction({ if(state, { false }) }, \mouseDownAction);
 		knob.addAction({ if(state, { false }) }, \mouseMoveAction);
+		// controls ignore keys
 		knob.addAction({ false }, \keyDownAction);
 		guiElems[name] = knob;
 
 		view.moveTo( *controls[name][\pos] );
-		view.addAction({
-			| v, x, y, m |
+		view.addAction({ |v, x, y| this.dragControlView(v, x, y)}, \mouseMoveAction);
+		view.addAction({ |v, x, y, m, mb|
+			this.editControlView(v, x, y, m, mb)}, \mouseDownAction);
+	}
 
-			if(state, {
-				var newPos;
+	updateControl {
+		| view |
+		var name = view.name.asSymbol;
 
-				newPos = v.absoluteBounds - v.parent.absoluteBounds;
-				newPos = (newPos.leftTop.asArray + [x, y]).div(5) * 5;
-
-				controls[name].put(\pos, newPos);
-				view.moveTo(*newPos);
-			});
-		}, \mouseMoveAction);
+		view.remove;
+		this.addControl(name);
+		group.set( name, guiElems[name].value );
 	}
 
 	uniGui {
@@ -106,10 +207,12 @@ NiceGui {
 				{
 					if(controls[name].isNil, {
 						controls[name] = (
-							type: \knob,
-							name: name,
-							pos:  [0, 0],
-							spec: [0, 1, 0.2] );
+							type:  0,
+							name:  name,
+							label: name,
+							pos:   [0, 0],
+							spec:  [0, 1, 0.2]
+						);
 					});
 
 					currentPresetDict[name] = 0.2;
@@ -278,11 +381,13 @@ NiceGui {
 		font = Font( "Helvetica", 9 );
 
 		w = Window( "Weedwacker", Rect(100, 345, 400, 655));
-		//key note listener
+		// key note listener
 		keycodes = [ 122, 115, 120, 100, 99, 118, 103, 98, 104,
 			110, 106, 109, 44, 108, 46, 59, 127, 113, 50, 119,
 			51, 101, 114, 53, 116, 54, 121, 55, 117, 105, 57, 111, 48, 112 ];
 
+		// TODO: i have changed my SC Qt to ignore autorepeat notes, need to
+		// figure out better solution
 		w.view.keyDownAction_({
 			| a,b,c,d |
 			downkey = keycodes.indexOf( d );
